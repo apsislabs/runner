@@ -2,6 +2,30 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
 use std::process::Child;
 
+use std::path::{Path, PathBuf};
+
+extern crate ctrlc;
+
+// struct DeleteOnDrop {
+//     path: PathBuf,
+//     listener: UnixListener,
+// }
+
+// impl DeleteOnDrop {
+//     fn bind(path: impl AsRef<Path>) -> std::io::Result<Self> {
+//         let path = path.as_ref().to_owned();
+//         UnixListener::bind(&path).map(|listener| DeleteOnDrop { path, listener })
+//     }
+// }
+
+// impl Drop for DeleteOnDrop {
+//     fn drop(&mut self) {
+//         // There's no way to return a useful error here
+//         println!("dod drop, removing socket...");
+//         let _ = std::fs::remove_file(&self.path).unwrap();
+//     }
+// }
+
 pub fn run(matches: &clap::ArgMatches<'_>) {
     println!("serving");
 
@@ -10,7 +34,16 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
     let socket = format!("/tmp/runner.{}.sock", name);
 
     println!("listening on socket {}...", socket);
-    let listener = UnixListener::bind(socket).unwrap();
+    let listener = UnixListener::bind(&socket).unwrap();
+
+    println!("setting interrupt handler...");
+    ctrlc::set_handler(move || {
+        println!("got the interrupt handler");
+        println!("dod drop, removing socket...");
+        let _ = std::fs::remove_file(&socket).unwrap();
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
 
     println!("auto starting process...");
     let mut opt_child = Some(start_process(cmd.clone()));
