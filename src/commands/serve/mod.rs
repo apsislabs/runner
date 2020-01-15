@@ -12,7 +12,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
     println!("listening on socket {}...", socket);
     let listener = UnixListener::bind(&socket).unwrap();
 
-    println!("setting interrupt handler...");
+    // set the interrupt handler
     ctrlc::set_handler(move || {
         println!("\ngot an interrupt, cleaning up the socket {}", socket);
         let _ = std::fs::remove_file(&socket).unwrap();
@@ -20,8 +20,9 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
     })
     .expect("Error setting interrupt handler");
 
-    println!("auto starting process...");
-    let mut opt_child = Some(start_process(cmd.clone()));
+    // println!("auto starting process...");
+    // let mut opt_child = Some(start_process(cmd.clone()));
+    let mut opt_child = messages::handle_start(cmd.clone(), None);
 
     for stream in listener.incoming() {
         match stream {
@@ -33,7 +34,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
 
                     // now handle the given message
                     if let Ok(l) = line {
-                        opt_child = handle_message(l.as_str(), cmd.clone(), opt_child);
+                        opt_child = messages::handle_message(l.as_str(), cmd.clone(), opt_child);
                     }
                 }
             }
@@ -60,69 +61,60 @@ fn check_process(child: Option<Child>) -> Option<Child> {
 }
 
 fn start_process(cmd: Vec<&str>) -> Child {
-    println!("starting process: {:?}", cmd.clone());
     let child = crate::process::start(cmd);
     let child = child.unwrap();
-    println!("\tpid: {}", child.id());
 
     return child;
 }
 
 fn stop_process(child: &mut Child) {
-    println!("killing child process: {}", child.id());
     child.kill().unwrap();
-    println!("child has been killed");
 }
 
-fn restart_process(cmd: Vec<&str>, child: &mut Child) -> Child {
-    stop_process(child);
-    return start_process(cmd);
-}
+mod messages {
+    use std::process::Child;
+    pub fn handle_message(message: &str, cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
+        return match message {
+            "stop" => handle_stop(child),
+            "start" => handle_start(cmd, child),
+            "restart" => handle_restart(cmd, child),
+            _ => child,
+        };
+    }
 
-fn handle_message(message: &str, cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
-    match &child {
-        Some(chi) => println!("processing command {}, child pid: {}", message, chi.id()),
-        None => println!("processing command {}, no child pid", message),
-    };
-    return match message {
-        "stop" => {
-            println!("stopping process...");
+    fn handle_stop(child: Option<Child>) -> Option<Child> {
+        println!("stopping process...");
+        match child {
+            Some(mut chi) => {
+                let id = chi.id();
+                super::stop_process(&mut chi);
+                println!("\tprocess stopped (pid: {}).", id);
+            }
+            None => println!("\talready stopped."),
+        }
+        return None;
+    }
 
-            match child {
-                Some(mut chi) => {
-                    println!("a process exists.");
-                    stop_process(&mut chi);
-                }
-                None => {}
+    pub fn handle_start(cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
+        println!("starting process...");
+        return match child {
+            Some(chi) => {
+                println!("\talready running (pid: {}).", chi.id());
+                Some(chi)
             }
-            None
-        }
-        "start" => {
-            println!("starting process...");
-            match child {
-                Some(chi) => {
-                    println!("the process is already running. Not doing anything");
-                    Some(chi)
-                }
-                None => {
-                    println!("fake starting now...");
-                    Some(start_process(cmd.clone()))
-                }
+            None => {
+                let process = super::start_process(cmd.clone());
+                println!("\tprocess started (pid: {}).", process.id());
+                Some(process)
             }
-        }
-        "restart" => {
-            println!("restarting process");
-            match child {
-                Some(mut chi) => {
-                    println!("the process is running. killing and restarting");
-                    Some(restart_process(cmd, &mut chi))
-                }
-                None => {
-                    println!("the process isn't running. Just starting it.");
-                    Some(start_process(cmd.clone()))
-                }
-            }
-        }
-        _ => None,
-    };
+        };
+    }
+
+    fn handle_restart(cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
+        println!("restarting process...");
+        let mut result = handle_stop(child);
+        result = handle_start(cmd, result);
+
+        return result;
+    }
 }
