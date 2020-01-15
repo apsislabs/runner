@@ -1,34 +1,10 @@
+extern crate ctrlc;
+
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
 use std::process::Child;
 
-use std::path::{Path, PathBuf};
-
-extern crate ctrlc;
-
-// struct DeleteOnDrop {
-//     path: PathBuf,
-//     listener: UnixListener,
-// }
-
-// impl DeleteOnDrop {
-//     fn bind(path: impl AsRef<Path>) -> std::io::Result<Self> {
-//         let path = path.as_ref().to_owned();
-//         UnixListener::bind(&path).map(|listener| DeleteOnDrop { path, listener })
-//     }
-// }
-
-// impl Drop for DeleteOnDrop {
-//     fn drop(&mut self) {
-//         // There's no way to return a useful error here
-//         println!("dod drop, removing socket...");
-//         let _ = std::fs::remove_file(&self.path).unwrap();
-//     }
-// }
-
 pub fn run(matches: &clap::ArgMatches<'_>) {
-    println!("serving");
-
     let cmd: Vec<&str> = matches.values_of("arguments").unwrap().collect();
     let name = matches.value_of("name").unwrap();
     let socket = format!("/tmp/runner.{}.sock", name);
@@ -38,12 +14,11 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
 
     println!("setting interrupt handler...");
     ctrlc::set_handler(move || {
-        println!("got the interrupt handler");
-        println!("dod drop, removing socket...");
+        println!("\ngot an interrupt, cleaning up the socket {}", socket);
         let _ = std::fs::remove_file(&socket).unwrap();
         std::process::exit(0);
     })
-    .expect("Error setting Ctrl-C handler");
+    .expect("Error setting interrupt handler");
 
     println!("auto starting process...");
     let mut opt_child = Some(start_process(cmd.clone()));
@@ -53,6 +28,10 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
             Ok(stream) => {
                 let stream = BufReader::new(stream);
                 for line in stream.lines() {
+                    // refresh the current process:
+                    opt_child = check_process(opt_child);
+
+                    // now handle the given message
                     if let Ok(l) = line {
                         opt_child = handle_message(l.as_str(), cmd.clone(), opt_child);
                     }
@@ -66,8 +45,22 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
     }
 }
 
+fn check_process(child: Option<Child>) -> Option<Child> {
+    return match child {
+        Some(mut chi) => {
+            let is_exited = chi.try_wait().unwrap().is_some();
+            if is_exited {
+                None
+            } else {
+                Some(chi)
+            }
+        }
+        None => None,
+    };
+}
+
 fn start_process(cmd: Vec<&str>) -> Child {
-    println!("starting process: {:?}", cmd.clone().into_iter());
+    println!("starting process: {:?}", cmd.clone());
     let child = crate::process::start(cmd);
     let child = child.unwrap();
     println!("\tpid: {}", child.id());
