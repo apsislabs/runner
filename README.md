@@ -13,3 +13,15 @@ from a different tab:
 1.  `runner start app` # starts the sleep process
 1.  `runner start app` # does nothing, because the sleep process is already running
 1.  `runner restart app` # stops and then starts the sleep process
+
+## Building
+
+`cargo build`
+
+## Building Releases
+
+Note: Releases must be built from x86_64-apple-darwin environments.
+
+1. `cargo bump --git-tag`
+1. `bin/build-releases`
+
