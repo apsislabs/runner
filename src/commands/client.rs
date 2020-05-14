@@ -7,6 +7,12 @@ pub fn send(matches: &clap::ArgMatches<'_>, message: &str) {
 
     println!("sending '{}' command to socket {}...", message, socket);
 
-    let mut stream = UnixStream::connect(socket).unwrap();
+    let mut stream = match UnixStream::connect(socket) {
+        Ok(sock) => sock,
+        Err(e) => {
+            println!("an error occurred while connecting to socket {:?}", e);
+            return;
+        }
+    };
     stream.write_all(message.as_bytes()).unwrap();
 }

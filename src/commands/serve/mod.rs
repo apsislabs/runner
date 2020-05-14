@@ -3,19 +3,40 @@ extern crate ctrlc;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
 use std::process::Child;
+use std::path::Path;
+use std::fs;
 
 pub fn run(matches: &clap::ArgMatches<'_>) {
     let cmd: Vec<&str> = matches.values_of("arguments").unwrap().collect();
     let name = matches.value_of("name").unwrap();
+    let force = matches.is_present("force");
     let socket = format!("/tmp/runner.{}.sock", name);
 
+    let socket_exists = Path::new(&socket).exists();
+
+    if socket_exists {
+        if force {
+            println!("The socket {} already exists. Attempting to replace it.", socket);
+            fs::remove_file(&socket).unwrap();
+        } else {
+            println!("The socket {} already exists. To overwrite it run with --force.", socket);
+            std::process::exit(1);
+        }
+    }
+
+    let listener = match UnixListener::bind(&socket) {
+        Ok(sock) => sock,
+        Err(e) => {
+            println!("an error occurred while binding to socket {:?}", e);
+            std::process::exit(1);
+        }
+    };
     println!("listening on socket {}...", socket);
-    let listener = UnixListener::bind(&socket).unwrap();
 
     // set the interrupt handler
     ctrlc::set_handler(move || {
         println!("\ngot an interrupt, cleaning up the socket {}", socket);
-        let _ = std::fs::remove_file(&socket).unwrap();
+        let _ = std::fs::remove_file(&socket);
         std::process::exit(0);
     })
     .expect("Error setting interrupt handler");
