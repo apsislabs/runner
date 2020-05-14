@@ -24,4 +24,6 @@ Note: Releases must be built from x86_64-apple-darwin environments.
 
 1. `cargo bump --git-tag`
 1. `bin/build-releases`
+1. `git put --tag`
+1. go to github and create a release. Upload the binaries in `releases/{version}` to the release
 
