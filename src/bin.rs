@@ -1,8 +1,7 @@
 extern crate clap;
 use clap::{App, Arg, SubCommand};
 
-mod commands;
-mod process;
+use runnerlib::commands;
 
 fn main() {
     let mut cli = App::new("runner").version("0.1.0").subcommand(

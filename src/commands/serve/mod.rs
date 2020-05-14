@@ -20,9 +20,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
     })
     .expect("Error setting interrupt handler");
 
-    // println!("auto starting process...");
-    // let mut opt_child = Some(start_process(cmd.clone()));
-    let mut opt_child = messages::handle_start(cmd.clone(), None);
+    let mut opt_child = messages::handle_start(cmd.clone(), None, 0);
 
     for stream in listener.incoming() {
         match stream {
@@ -30,7 +28,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
                 let stream = BufReader::new(stream);
                 for line in stream.lines() {
                     // refresh the current process:
-                    opt_child = check_process(opt_child);
+                    opt_child = crate::process::is_running(opt_child);
 
                     // now handle the given message
                     if let Ok(l) = line {
@@ -44,20 +42,6 @@ pub fn run(matches: &clap::ArgMatches<'_>) {
             }
         }
     }
-}
-
-fn check_process(child: Option<Child>) -> Option<Child> {
-    return match child {
-        Some(mut chi) => {
-            let is_exited = chi.try_wait().unwrap().is_some();
-            if is_exited {
-                None
-            } else {
-                Some(chi)
-            }
-        }
-        None => None,
-    };
 }
 
 fn start_process(cmd: Vec<&str>) -> Child {
@@ -75,46 +59,50 @@ mod messages {
     use std::process::Child;
     pub fn handle_message(message: &str, cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
         return match message {
-            "stop" => handle_stop(child),
-            "start" => handle_start(cmd, child),
-            "restart" => handle_restart(cmd, child),
+            "stop" => handle_stop(child, 0),
+            "start" => handle_start(cmd, child, 0),
+            "restart" => handle_restart(cmd, child, 0),
             _ => child,
         };
     }
 
-    fn handle_stop(child: Option<Child>) -> Option<Child> {
-        println!("stopping process...");
+    fn handle_stop(child: Option<Child>, indent: u32) -> Option<Child> {
+        println!("{}stopping process...", t(indent));
         match child {
             Some(mut chi) => {
                 let id = chi.id();
                 super::stop_process(&mut chi);
-                println!("\tprocess stopped (pid: {}).", id);
+                println!("{}process stopped (pid: {}).", t(indent + 1), id);
             }
-            None => println!("\talready stopped."),
+            None => println!("{}already stopped.", t(indent + 1)),
         }
         return None;
     }
 
-    pub fn handle_start(cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
-        println!("starting process...");
+    pub fn handle_start(cmd: Vec<&str>, child: Option<Child>, indent: u32) -> Option<Child> {
+        println!("{}starting process...", t(indent));
         return match child {
             Some(chi) => {
-                println!("\talready running (pid: {}).", chi.id());
+                println!("{}already running (pid: {}).", t(indent + 1), chi.id());
                 Some(chi)
             }
             None => {
                 let process = super::start_process(cmd.clone());
-                println!("\tprocess started (pid: {}).", process.id());
+                println!("{}process started (pid: {}).", t(indent + 1), process.id());
                 Some(process)
             }
         };
     }
 
-    fn handle_restart(cmd: Vec<&str>, child: Option<Child>) -> Option<Child> {
-        println!("restarting process...");
-        let mut result = handle_stop(child);
-        result = handle_start(cmd, result);
+    fn handle_restart(cmd: Vec<&str>, child: Option<Child>, indent: u32) -> Option<Child> {
+        println!("{}restarting process...", t(indent));
+        let mut result = handle_stop(child, indent + 1);
+        result = handle_start(cmd, result, indent + 1);
 
         return result;
+    }
+
+    fn t(indent: u32) -> String {
+        return (0..indent).map(|_| "\t").collect::<String>();
     }
 }
